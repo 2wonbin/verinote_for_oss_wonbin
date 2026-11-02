@@ -254,6 +254,7 @@ function uploadDocument(data, progress) {
 function openUpload(doc=null) {
   if(uploadBusy)return;
   uploadTarget=doc;$('#upload-form').reset();$('#upload-form').elements.title.value=doc?.title||'';$('#upload-form').elements.title.readOnly=Boolean(doc);
+  const urlInp=$('#fetch-url-input');if(urlInp)urlInp.value='';
   $('#upload-progress').innerHTML='';
   $('#upload-heading').textContent=doc?`새 문서 버전 · v${doc.next_version}`:'문서 등록';
   $('#upload-dialog').showModal();
@@ -283,6 +284,30 @@ async function submitUpload(form) {
   } finally {uploadBusy=false;controls.forEach((c,i)=>c.disabled=disabled[i]);}
 }
 $('#upload-form').onsubmit=e=>{e.preventDefault();submitUpload(e.target);};
+// [STUDY-CUSTOM] 웹 아티클 URL 스크랩 등록 이벤트
+const fetchBtn=$('#fetch-url-btn');
+if(fetchBtn){
+  fetchBtn.onclick=async()=>{
+    const urlInput=$('#fetch-url-input'),url=(urlInput?.value||'').trim();
+    if(!url){notice('가져올 웹 아티클 URL을 입력하세요.',true);return;}
+    const form=$('#upload-form'),title=form.elements.title.value.trim(),origText=fetchBtn.textContent;
+    fetchBtn.disabled=true;fetchBtn.textContent='가져오는 중...';setUploadProgress(null,'웹 페이지 스크랩 중...');
+    try{
+      const res=await fetch('/api/documents/fetch-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,title})});
+      if(!res.ok){
+        const err=await res.json().catch(()=>({error:'웹 페이지를 가져오지 못했습니다.'}));
+        throw new Error(err.error||'웹 페이지를 가져오지 못했습니다.');
+      }
+      const d=await res.json();
+      $('#upload-dialog').close();await loadLibrary();await openDoc(d.id);
+      notice('웹 아티클을 성공적으로 등록했습니다. 개체·별칭·관계 사전을 먼저 생성하세요.');
+    }catch(err){
+      setUploadProgress(null,'가져오기 실패',err.message,true);notice(err.message,true);
+    }finally{
+      fetchBtn.disabled=false;fetchBtn.textContent=origText;
+    }
+  };
+}
 function bulkCandidates(doc) {
   return doc.items.filter(item=>item.status==='pending'&&['page','fact'].includes(item.kind));
 }

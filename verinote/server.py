@@ -18,7 +18,7 @@ from .agents import (
     validate_model,
 )
 from .config import ConfigError, Credentials, create_config, load_config
-from .documents import MAX_BYTES, MAX_DOCX_XML_BYTES, MAX_TEXT, decode_document
+from .documents import MAX_BYTES, MAX_DOCX_XML_BYTES, MAX_TEXT, decode_document, fetch_web_article
 from .extraction_options import CHUNK_THRESHOLD_POLICY
 from .model_catalog import ModelCatalog
 from .ontology import MAX_DICTIONARY_BYTES
@@ -163,6 +163,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(store.save_usage_rates(self.body()))
             if route.path == '/api/usage' and method == 'GET':
                 return self.send(self.server.service.usage_report())
+            # [STUDY-CUSTOM] 웹 아티클 URL 자동 스크랩 및 문서 등록
+            if route.path == '/api/documents/fetch-url' and method == 'POST':
+                data = self.body()
+                url = text(data.get('url'), 'URL')
+                title, filename, raw, content = fetch_web_article(url)
+                user_title = (data.get('title') or '').strip()
+                final_title = user_title if user_title else title
+                return self.send(store.register(final_title, filename, raw, content), 201)
             if route.path == '/api/documents':
                 if method == 'GET':
                     return self.send(store.documents())
