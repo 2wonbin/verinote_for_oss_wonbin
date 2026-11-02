@@ -5,3 +5,8 @@
 direct(X,P,Y) :- edge(X,P,Y).
 reach(X,P,Y) :- edge(X,P,Y).
 reach(X,P,Z) :- edge(X,P,Y),reach(Y,P,Z).
+
+// [STUDY-CUSTOM] 다중 관계 간의 복합 전이/흐름 추론 규칙 (Composite Flow Reachability)
+.decl flow_reach(src:symbol,predicate:symbol,dst:symbol)
+flow_reach(X,P,Y) :- edge(X,P,Y).
+flow_reach(X,"flow",Z) :- edge(X,_,Y),flow_reach(Y,_,Z).

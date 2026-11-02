@@ -10,14 +10,14 @@ RULES = Path(__file__).with_name('rules.dl').read_text()
 LOCK = threading.Lock()
 
 
-def witness(facts, source, target, predicate):
+def witness(facts, source, target, predicate=None):
     queue: deque[tuple[str, list[str]]] = deque([(source, [])])
     seen = {source}
     while queue:
         node, path = queue.popleft()
         for fact in facts:
             p = fact['payload']
-            if p['subject'] != node or p['predicate'] != predicate:
+            if p['subject'] != node or (predicate and predicate != 'flow' and p['predicate'] != predicate):
                 continue
             new_path = path + [fact['id']]
             if p['object'] == target:
@@ -34,8 +34,8 @@ def _legacy_query(snapshot, action='direct', subject='', predicate='', target=''
     for value in (subject, predicate, target):
         if not isinstance(value, str) or len(value) > 200:
             raise ValueError('질의 값은 200자 이하 문자열이어야 합니다.')
-    if action != 'direct' and (not subject or not predicate):
-        raise ValueError('전이 질의에는 기준 개체와 관계를 지정하세요.')
+    if action != 'direct' and not subject:
+        raise ValueError('전이 질의에는 기준 개체를 지정하세요.')
     if action == 'path' and not target:
         raise ValueError('경로 질의에는 도착 개체가 필요합니다.')
     from pyrewire import EasySession
@@ -45,7 +45,8 @@ def _legacy_query(snapshot, action='direct', subject='', predicate='', target=''
         for f in facts:
             p = f['payload']
             session.insert('edge', (p['subject'], p['predicate'], p['object']))
-        rows = sorted(set(session.snapshot('direct' if action == 'direct' else 'reach')))
+        rel_target = 'direct' if action == 'direct' else ('reach' if predicate else 'flow_reach')
+        rows = sorted(set(session.snapshot(rel_target)))
     selected = []
     for a, p, b in rows:
         if predicate and p != predicate:
@@ -82,8 +83,8 @@ def query(snapshot, action='direct', subject='', predicate='', target=''):
         raise ValueError('지원 질의: direct, downstream, upstream, path')
     if any(not isinstance(v, str) or len(v) > 200 for v in (subject, predicate, target)):
         raise ValueError('질의 값은 200자 이하 문자열이어야 합니다.')
-    if action != 'direct' and (not subject or not predicate):
-        raise ValueError('전이 질의에는 기준 개체와 관계를 지정하세요.')
+    if action != 'direct' and not subject:
+        raise ValueError('전이 질의에는 기준 개체를 지정하세요.')
     if action == 'path' and not target: raise ValueError('경로 질의에는 도착 개체가 필요합니다.')
     if action == 'direct' and target: raise ValueError('직접 질의에는 target을 지정하지 마세요.')
     graph = identity_graph(snapshot)
@@ -101,7 +102,7 @@ def query(snapshot, action='direct', subject='', predicate='', target=''):
               'entity_candidates': {'subject': subjects, 'target': targets}, 'predicate_candidates': predicates,
               'entities': list({r['ref']: r for r in subjects+targets}.values()), 'relations': predicates,
               'warnings': [], 'scope': '사전 고정 의미별 연결 경로입니다. 문서 간 동명 개체를 동일시하지 않으며 인과관계를 보장하지 않습니다.'}
-    if action in ('downstream', 'path') and (len(subjects) > 1 or len(predicates) > 1 or action == 'path' and len(targets) > 1):
+    if action in ('downstream', 'path') and (len(subjects) > 1 or (predicate and len(predicates) > 1) or action == 'path' and len(targets) > 1):
         result.update(status='ambiguous', warnings=['동일한 이름의 여러 의미가 있습니다. 개체·관계 참조를 선택하세요.'])
         return result
     facts = sorted(snapshot['facts'], key=lambda f: f['id']); original = {f['id']: f for f in facts}
@@ -111,9 +112,11 @@ def query(snapshot, action='direct', subject='', predicate='', target=''):
     with LOCK, EasySession(RULES) as session:
         for fact in scoped:
             p = fact['payload']; session.insert('edge', (p['subject'], p['predicate'], p['object']))
-        rows = sorted(set(session.snapshot('direct' if action == 'direct' else 'reach')))
+        rel_target = 'direct' if action == 'direct' else ('reach' if predicate else 'flow_reach')
+        rows = sorted(set(session.snapshot(rel_target)))
     subject_refs = {r['ref'] for r in subjects}; target_refs = {r['ref'] for r in targets}; predicate_refs = {r['ref'] for r in predicates}
     labels = {r['ref']: r['label'] for r in [*graph['entities'], *graph['relations']]}
+    labels['flow'] = 'flow(연쇄흐름)'
     selected = []
     for a, p, b in rows:
         if predicate and p not in predicate_refs: continue
@@ -121,12 +124,12 @@ def query(snapshot, action='direct', subject='', predicate='', target=''):
         elif action == 'path': include = a in subject_refs and b in target_refs
         else: include = (not subject or a in subject_refs) and (action == 'direct' or b != a) and (not target or b in target_refs)
         if include: selected.append((a, p, b))
-    selected.sort(key=lambda r: (*[labels[v] for v in r], *r))
+    selected.sort(key=lambda r: (*[labels.get(v, v) for v in r], *r))
     used: set[str] = set()
     for a, p, b in selected:
         ids = ([f['id'] for f in scoped if f['payload'] == {'subject': a, 'predicate': p, 'object': b}]
                if action == 'direct' else witness(scoped, a, b, p))
-        displayed = [labels[a], labels[p], labels[b]]; refs = [a, p, b]
+        displayed = [labels.get(a, a), labels.get(p, p), labels.get(b, b)]; refs = [a, p, b]
         result['rows'].append(displayed); result['row_refs'].append(refs)
         result['proofs'].append({'row': displayed, 'row_refs': refs, 'fact_ids': ids}); used.update(ids)
     result['facts'] = [original[i] for i in sorted(used)]
