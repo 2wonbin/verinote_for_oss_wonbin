@@ -276,8 +276,8 @@ class Assistant:
                 args = {k: v.strip() for k, v in args.items()}
                 if args['action'] not in ('direct', 'downstream', 'upstream', 'path'):
                     raise ValueError('지원 질의: direct, downstream, upstream, path')
-                if args['action'] != 'direct' and (not args['subject'] or not args['predicate']):
-                    raise ValueError('전이 질의에는 기준 개체와 관계를 지정하세요.')
+                if args['action'] != 'direct' and not args['subject']:
+                    raise ValueError('전이 질의에는 기준 개체를 지정하세요.')
                 if args['action'] == 'path' and not args['target']:
                     raise ValueError('경로 질의에는 도착 개체가 필요합니다.')
                 if args['action'] == 'direct' and args['target']:

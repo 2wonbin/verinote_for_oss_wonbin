@@ -500,11 +500,6 @@ $('#query-form').onsubmit=e=>{e.preventDefault();attempt(async()=>{
       notice('선택하신 조회 방식(전이 질의)에는 [기준 개체]를 입력 또는 선택해야 합니다.',true);
       return;
     }
-    if(!data.predicate||!data.predicate.trim()){
-      form.elements.predicate.focus();
-      notice('선택하신 조회 방식(전이 질의)에는 [관계]를 입력 또는 선택해야 합니다.',true);
-      return;
-    }
     if(data.action==='path'&&(!data.target||!data.target.trim())){
       form.elements.target.focus();
       notice('경로 탐색 질의에는 [도착 개체]를 입력 또는 선택해야 합니다.',true);
