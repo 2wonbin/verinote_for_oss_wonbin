@@ -25,7 +25,7 @@ function showView(name) {
   $('#breadcrumb').textContent = {library:'문서와 위키',query:'관계 탐색',activity:'실행 기록',settings:'에이전트 설정'}[name];
   if (name === 'library' && selectedDoc?.latest_run) watchRun(selectedDoc.latest_run.id,selectedDoc.id,selectedDoc.version,selectedDoc.latest_run.status);
   if (name === 'activity') attempt(loadRuns);
-  if (name === 'query') attempt(async()=>{await loadQueries();await loadQuestions();});
+  if (name === 'query') attempt(async()=>{await loadQueries();await loadQuestions();await refreshQuerySuggestions();});
 }
 async function loadLibrary() {
   docs = await api('/api/documents');
@@ -492,7 +492,25 @@ $('#settings-form').onsubmit=e=>{e.preventDefault();attempt(async()=>{
   const form=e.target;await api('/api/settings','PUT',{selected:form.elements.selected.value,models:Object.fromEntries(config.providers.map(p=>[p.id,form.elements['model-'+p.id].value]))});await loadSettings();if($('#extract-agent')){$('#extract-agent').value=config.selected;$('#extract-model').value=config.models[config.selected]||'';syncProviderControls('extract');}notice('에이전트별 모델 설정을 저장했습니다.');
 });};
 $('#query-form').onsubmit=e=>{e.preventDefault();attempt(async()=>{
-  const data=Object.fromEntries(new FormData(e.target));if(!data.snapshot)delete data.snapshot;
+  const form=e.target;
+  const data=Object.fromEntries(new FormData(form));if(!data.snapshot)delete data.snapshot;
+  if(data.action!=='direct'){
+    if(!data.subject||!data.subject.trim()){
+      form.elements.subject.focus();
+      notice('선택하신 조회 방식(전이 질의)에는 [기준 개체]를 입력 또는 선택해야 합니다.',true);
+      return;
+    }
+    if(!data.predicate||!data.predicate.trim()){
+      form.elements.predicate.focus();
+      notice('선택하신 조회 방식(전이 질의)에는 [관계]를 입력 또는 선택해야 합니다.',true);
+      return;
+    }
+    if(data.action==='path'&&(!data.target||!data.target.trim())){
+      form.elements.target.focus();
+      notice('경로 탐색 질의에는 [도착 개체]를 입력 또는 선택해야 합니다.',true);
+      return;
+    }
+  }
   const r=await api('/api/query','POST',data);renderQuery(r);await loadQueries();notice(r.status==='ambiguous'?'의미 선택이 필요합니다. 후보를 선택한 뒤 다시 조회하세요.':`${r.rows.length}개 결과 · 실제 PyreWire 계산 완료`);
 });};
 // [STUDY-CUSTOM] Canvas 기반 인터랙티브 지식 그래프 렌더링
@@ -510,6 +528,84 @@ function renderInteractiveGraph(r) {
     graphViewerInstance = new KnowledgeGraphViewer(container, { height: 420 });
   }
   graphViewerInstance.setData(r);
+}
+// [STUDY-CUSTOM] 관계 조회 어시스턴트: 사용 가능한 개체/관계 자동완성 & 빠른 선택 칩
+async function refreshQuerySuggestions() {
+  try {
+    const res = await api('/api/query', 'POST', { action: 'direct' });
+    const entities = new Set();
+    const predicates = new Set();
+    if (res.rows) {
+      for (const row of res.rows) {
+        if (row[0]) entities.add(row[0]);
+        if (row[1]) predicates.add(row[1]);
+        if (row[2]) entities.add(row[2]);
+      }
+    }
+    if (res.entities) res.entities.forEach(e => entities.add(e.name || e.id || e.ref));
+    if (res.relations) res.relations.forEach(r => predicates.add(r.name || r.id || r.ref));
+
+    const entList = $('#available-entities-list');
+    const predList = $('#available-predicates-list');
+    if (entList) entList.innerHTML = Array.from(entities).map(e => `<option value="${esc(e)}">`).join('');
+    if (predList) predList.innerHTML = Array.from(predicates).map(p => `<option value="${esc(p)}">`).join('');
+
+    const chipsContainer = $('#quick-entity-chips-container');
+    const chipsDiv = $('#quick-entity-chips');
+    if (chipsContainer && chipsDiv) {
+      if (entities.size > 0) {
+        chipsContainer.style.display = 'block';
+        chipsDiv.innerHTML = Array.from(entities).slice(0, 12).map(e => `<button type="button" class="entity-chip" data-entity="${esc(e)}">${esc(e)}</button>`).join('');
+        for (const chip of chipsDiv.querySelectorAll('[data-entity]')) {
+          chip.onclick = () => {
+            const input = $('#query-form input[name="subject"]');
+            if (input) {
+              input.value = chip.dataset.entity;
+              input.focus();
+              notice(`기준 개체로 '${chip.dataset.entity}'을(를) 선택했습니다.`);
+            }
+          };
+        }
+      } else {
+        chipsContainer.style.display = 'none';
+      }
+    }
+  } catch (err) {
+    // 백그라운드 제안 로딩 실패 시 무시
+  }
+}
+const quickFullBtn = $('#btn-quick-full-graph');
+if (quickFullBtn) {
+  quickFullBtn.onclick = () => attempt(async () => {
+    quickFullBtn.disabled = true;
+    try {
+      const r = await api('/api/query', 'POST', { action: 'direct' });
+      renderQuery(r);
+      await loadQueries();
+      const graphPanel = $('#graph-panel');
+      if (graphPanel) {
+        graphPanel.style.display = 'block';
+        graphPanel.scrollIntoView({ behavior: 'smooth' });
+      }
+      notice(`${r.rows.length}개 관계의 전체 지식 그래프를 렌더링했습니다.`);
+    } finally {
+      quickFullBtn.disabled = false;
+    }
+  });
+}
+const queryActionSelect = $('#query-action-select');
+const queryActionHint = $('#query-action-hint');
+if (queryActionSelect && queryActionHint) {
+  queryActionSelect.onchange = () => {
+    const act = queryActionSelect.value;
+    const hints = {
+      direct: '💡 <b>직접 관계 (direct)</b>: 기준 개체와 관계를 비워두면 전체 그래프를 조회하며, 입력 시 해당 조건만 필터링합니다.',
+      downstream: '💡 <b>도달하는 대상 (downstream)</b>: <b>기준 개체</b>와 <b>관계</b>를 필수로 선택하세요. (이 개체로부터 시작해 이어지는 대상을 꼬리물기로 추적합니다)',
+      upstream: '💡 <b>출발점 (upstream)</b>: <b>기준 개체</b>와 <b>관계</b>를 필수로 선택하세요. (이 개체를 호출/참조하는 상위 원인을 역추적합니다)',
+      path: '💡 <b>두 개체 사이의 경로 (path)</b>: <b>기준 개체</b>, <b>관계</b>, <b>도착 개체</b>를 모두 선택하세요.'
+    };
+    queryActionHint.innerHTML = hints[act] || '';
+  };
 }
 function renderQuery(r) {
   renderInteractiveGraph(r);
@@ -592,7 +688,20 @@ $('#ask-form').onsubmit=e=>{e.preventDefault();attempt(async()=>{
 });};
 async function loadQuestions(){
   const rows=await api('/api/questions');
-  $('#question-history').innerHTML=rows.map(r=>`<div class="history-line"><button data-question="${esc(r.id)}">${esc(r.question)}</button> ${badge(r.status)} <span class="muted">${esc(r.agent)} · ${esc(date(r.created_at))}</span>${renderUsage(r.usage)}</div>`).join('')||'<p class="muted">아직 질문이 없습니다.</p>';
+  const countBadge=$('#question-count-badge');
+  if(countBadge)countBadge.textContent=`${rows.length}건`;
+  $('#question-history').innerHTML=rows.map(r=>{
+    const tokenTotal=(r.usage&&(r.usage.input_tokens||r.usage.output_tokens))?((r.usage.input_tokens||0)+(r.usage.output_tokens||0)):null;
+    const tokenPill=tokenTotal!==null?`<span class="badge" style="background:#edf3eb;color:#2b5437;font-size:10px;">${tokenTotal.toLocaleString()} tok</span>`:'';
+    return `<div class="history-line" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #edf1eb;">
+      <div style="min-width:0;flex:1;display:flex;align-items:center;gap:8px;">
+        <button data-question="${esc(r.id)}" style="text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:440px;font-weight:500;padding:6px 10px;">${esc(r.question)}</button>
+        ${badge(r.status)}
+        ${tokenPill}
+      </div>
+      <span class="muted" style="font-size:11px;white-space:nowrap;">${esc(r.agent)} · ${esc(date(r.created_at))}</span>
+    </div>`;
+  }).join('')||'<p class="muted" style="margin:8px 0;">아직 질문이 없습니다.</p>';
   for(const b of document.querySelectorAll('[data-question]'))b.onclick=()=>{activeQuestion=b.dataset.question;attempt(()=>watchQuestion(activeQuestion));};
 }
 async function watchQuestion(id){
