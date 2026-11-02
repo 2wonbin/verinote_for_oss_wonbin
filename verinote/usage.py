@@ -3,6 +3,7 @@ import copy
 import json
 import math
 import re
+import time
 from pathlib import Path
 
 AGENTS = {'agy', 'claude', 'copilot', 'cursor', 'codex', 'openrouter', 'ollama'}
@@ -57,7 +58,14 @@ def atomic_json(path, value):
     path = Path(path)
     temp = path.with_suffix(path.suffix + '.tmp')
     temp.write_text(json.dumps(value, ensure_ascii=False, allow_nan=False, indent=2), encoding='utf-8')
-    temp.replace(path)
+    for attempt in range(5):
+        try:
+            temp.replace(path)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.02 * (attempt + 1))
 
 
 def _text_model(value):
