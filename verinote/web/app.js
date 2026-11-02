@@ -260,6 +260,49 @@ function openUpload(doc=null) {
   $('#upload-dialog').showModal();
 }
 $('#new-document').onclick=()=>openUpload();$('#close-upload').onclick=()=>{if(!uploadBusy)$('#upload-dialog').close();};
+// [STUDY-CUSTOM] Obsidian 연동 모달 핸들러
+const openObsidianBtn=$('#open-obsidian-btn'),obsidianDialog=$('#obsidian-dialog'),closeObsidianBtn=$('#close-obsidian');
+if(openObsidianBtn&&obsidianDialog){
+  openObsidianBtn.onclick=()=>{
+    $('#obsidian-import-form')?.reset();
+    const prog=$('#obsidian-import-progress');if(prog)prog.innerHTML='';
+    obsidianDialog.showModal();
+  };
+  if(closeObsidianBtn)closeObsidianBtn.onclick=()=>obsidianDialog.close();
+}
+const obsidianImportForm=$('#obsidian-import-form');
+if(obsidianImportForm){
+  obsidianImportForm.onsubmit=async e=>{
+    e.preventDefault();
+    const file=obsidianImportForm.elements.file.files[0];
+    const title=obsidianImportForm.elements.title.value.trim();
+    if(!file)return;
+    const progressEl=$('#obsidian-import-progress');
+    const submitBtn=obsidianImportForm.querySelector('button.primary');
+    submitBtn.disabled=true;
+    progressEl.innerHTML='<p class="muted">볼트 ZIP 파일 인코딩 중...</p>';
+    try{
+      const base64=await encodeUploadFile(file,(pct,status)=>{
+        progressEl.innerHTML=`<p class="muted">${status||'파일 처리 중'}</p>`;
+      });
+      progressEl.innerHTML='<p class="muted">서버로 볼트 전송 및 압축 해제 중...</p>';
+      const res=await api('/api/documents','POST',{
+        title:title||file.name.replace(/\.zip$/i,''),
+        filename:file.name,
+        content_base64:base64
+      });
+      obsidianDialog.close();
+      await loadLibrary();
+      await openDoc(res.id);
+      notice('Obsidian 볼트를 성공적으로 불러왔습니다! 사전을 생성해 지식을 연결하세요.');
+    }catch(err){
+      progressEl.innerHTML=`<p class="error">${err.message}</p>`;
+      notice(err.message,true);
+    }finally{
+      submitBtn.disabled=false;
+    }
+  };
+}
 $('#upload-dialog').addEventListener('cancel',e=>{if(uploadBusy)e.preventDefault();});
 async function submitUpload(form) {
   if(uploadBusy)return;

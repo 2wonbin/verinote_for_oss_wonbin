@@ -230,3 +230,4 @@ def export_vault_obsidian(store) -> bytes:
                 zf.writestr(f'Wikis/{_sanitize_filename(t)}.md', '\n'.join(wiki_lines))
 
     return bio.getvalue()
+

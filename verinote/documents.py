@@ -16,6 +16,46 @@ MAX_URL_FETCH_BYTES = 10 * 1024 * 1024
 
 
 # ---------------------------------------------------------------------------
+# [STUDY-CUSTOM] Obsidian / Markdown 볼트 ZIP 가져오기(Import) 파서
+# ---------------------------------------------------------------------------
+def _extract_zip_vault_text(raw: bytes) -> str:
+    """Extract and merge markdown files from an Obsidian vault zip archive."""
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        notes = []
+        total_size = 0
+        for name in sorted(archive.namelist()):
+            # 시스템/설정 폴더(.obsidian, __MACOSX 등) 및 디렉토리 제외
+            if name.endswith('/') or '/.' in name or name.startswith(('.', '__MACOSX')):
+                continue
+            lower = name.lower()
+            if not (lower.endswith('.md') or lower.endswith('.markdown') or lower.endswith('.txt')):
+                continue
+
+            info = archive.getinfo(name)
+            total_size += info.file_size
+            if total_size > MAX_DOCX_XML_BYTES:
+                raise ValueError('ZIP 볼트 압축 해제 크기가 16 MiB를 초과합니다.')
+
+            try:
+                content = archive.read(name).decode('utf-8-sig', errors='replace').strip()
+            except Exception as exc:
+                continue
+
+            if content:
+                note_name = Path(name).name
+                notes.append(f'--- [노트: {note_name}] ---\n{content}')
+
+        if not notes:
+            raise ValueError('ZIP 아카이브 내에 읽을 수 있는 마크다운(.md) 파일이 없습니다.')
+
+        merged = '\n\n'.join(notes)
+        if len(merged) > MAX_TEXT:
+            # 상한선에 맞게 조정 안내
+            raise ValueError('추출 본문은 128,000자까지 분석할 수 있습니다. 볼트 범위를 나누어 등록하세요.')
+        return merged
+
+
+# ---------------------------------------------------------------------------
 # [STUDY-CUSTOM] PPTX(파워포인트) 슬라이드 문서 텍스트 파서
 # ---------------------------------------------------------------------------
 def _extract_pptx_text(raw: bytes) -> str:
@@ -176,6 +216,9 @@ def decode_document(filename, raw):
         elif suffix == '.pptx':
             # [STUDY-CUSTOM] PPTX 슬라이드 파싱
             text = _extract_pptx_text(raw)
+        elif suffix == '.zip':
+            # [STUDY-CUSTOM] Obsidian 볼트 ZIP 파싱
+            text = _extract_zip_vault_text(raw)
         elif suffix in {'.html', '.htm'}:
             # [STUDY-CUSTOM] HTML 본문 파싱
             _, text = _extract_html_text(raw)
@@ -193,7 +236,7 @@ def decode_document(filename, raw):
                     raise ValueError('추출 본문은 128,000자까지 분석할 수 있습니다. 문서를 나누어 등록하세요.')
             text = '\n'.join(parts)
         else:
-            raise ValueError('지원 형식: TXT, MD, CSV, JSON, RST, LOG, PDF, DOCX, PPTX, HTML')
+            raise ValueError('지원 형식: TXT, MD, CSV, JSON, RST, LOG, PDF, DOCX, PPTX, HTML, ZIP')
     except (UnicodeError, zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
         raise ValueError('문서 형식이 손상되었거나 UTF-8이 아닙니다.') from exc
     if not text.strip():
