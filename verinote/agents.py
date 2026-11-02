@@ -63,7 +63,8 @@ def command(agent, model, prompt):
         'codex': ['exec', '--skip-git-repo-check', '--ephemeral', '--sandbox', 'read-only', '--color', 'never', '--json'],
     }[agent]
     args = [binary, *flags, *(['--model', model] if model else [])]
-    if agent == 'copilot' and sys.platform == 'win32':
+    if agent in ('copilot', 'agy') and sys.platform == 'win32':
+        # [STUDY-CUSTOM] Windows 32KB 명령행 길이 한계(WinError 206) 방지를 위해 prompt를 stdin으로 전달
         return args, prompt
     return (args + ['-'], prompt) if agent == 'codex' else (args + ['-p', prompt], '')
 
