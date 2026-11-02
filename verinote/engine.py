@@ -46,7 +46,8 @@ def _legacy_query(snapshot, action='direct', subject='', predicate='', target=''
             p = f['payload']
             session.insert('edge', (p['subject'], p['predicate'], p['object']))
         rel_target = 'direct' if action == 'direct' else ('reach' if predicate else 'flow_reach')
-        rows = sorted(set(session.snapshot(rel_target)))
+        raw_rows = session.snapshot(rel_target)
+        rows = sorted(set(tuple('flow' if isinstance(x, int) else str(x) for x in r) for r in raw_rows))
     selected = []
     for a, p, b in rows:
         if predicate and p != predicate:
@@ -113,7 +114,8 @@ def query(snapshot, action='direct', subject='', predicate='', target=''):
         for fact in scoped:
             p = fact['payload']; session.insert('edge', (p['subject'], p['predicate'], p['object']))
         rel_target = 'direct' if action == 'direct' else ('reach' if predicate else 'flow_reach')
-        rows = sorted(set(session.snapshot(rel_target)))
+        raw_rows = session.snapshot(rel_target)
+        rows = sorted(set(tuple('flow' if isinstance(x, int) else str(x) for x in r) for r in raw_rows))
     subject_refs = {r['ref'] for r in subjects}; target_refs = {r['ref'] for r in targets}; predicate_refs = {r['ref'] for r in predicates}
     labels = {r['ref']: r['label'] for r in [*graph['entities'], *graph['relations']]}
     labels['flow'] = 'flow(연쇄흐름)'
