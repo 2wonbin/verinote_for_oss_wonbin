@@ -141,6 +141,14 @@ def query(snapshot, action='direct', subject='', predicate='', target=''):
     relation_refs = predicate_refs | {f['predicate_ref'] for f in proof_edges}
     result['entities'] = [r for r in graph['entities'] if r['ref'] in entity_refs]
     result['relations'] = [r for r in graph['relations'] if r['ref'] in relation_refs]
+    if any(r[1] == 'flow' for r in selected):
+        result['relations'].append({
+            'ref': 'flow', 'id': 'flow', 'label': 'flow(연쇄흐름)', 'name': 'flow', 'type': '',
+            'aliases': [], 'quote': '', 'description': '연쇄 전이 흐름', 'subject_types': [], 'object_types': [],
+            'document_id': '', 'version': 1, 'ontology_id': '', 'ontology_revision': 1, 'ontology_sha256': '',
+            'scope_ref': 'scope:synthetic', 'document_title': '', 'identity_status': 'pinned',
+            'guidance_sources': [], 'current_approved': True, 'historical_pin': True, 'approval': 'current_approved', 'fact_count': 0
+        })
     result['status'] = 'success' if selected else 'empty'
     if any(r['identity_status'] == 'legacy_unresolved' for r in graph['entities'] if r['ref'] in {v for row in selected for v in (row[0], row[2])}):
         result['warnings'].append('사전 고정 정보가 없는 사실은 문서·버전 내부의 미해결 의미로만 연결했습니다.')
