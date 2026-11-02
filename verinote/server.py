@@ -163,6 +163,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(store.save_usage_rates(self.body()))
             if route.path == '/api/usage' and method == 'GET':
                 return self.send(self.server.service.usage_report())
+            # [STUDY-CUSTOM] 전체 지식 서재 Obsidian Vault 일괄 내보내기
+            if route.path == '/api/export/obsidian' and method == 'GET':
+                from .export_obsidian import export_vault_obsidian
+                zip_bytes = export_vault_obsidian(store)
+                return self.send(zip_bytes, mime='application/zip', headers={'Content-Disposition': 'attachment; filename="verinote_vault_obsidian.zip"'})
             # [STUDY-CUSTOM] 웹 아티클 URL 자동 스크랩 및 문서 등록
             if route.path == '/api/documents/fetch-url' and method == 'POST':
                 data = self.body()
@@ -207,6 +212,13 @@ class Handler(BaseHTTPRequestHandler):
                 if len(parts) == 4 and parts[3] == 'raw' and method == 'GET':
                     raw, _ = store.raw(doc_id, version or store.document(doc_id)['version'])
                     return self.send(raw, mime='application/octet-stream', headers={'Content-Disposition': 'attachment; filename="original"'})
+                # [STUDY-CUSTOM] 문서별 Obsidian ZIP 내보내기
+                if len(parts) == 5 and parts[3] == 'export' and parts[4] == 'obsidian' and method == 'GET':
+                    from .export_obsidian import export_document_obsidian
+                    doc = store.document(doc_id, version)
+                    zip_bytes = export_document_obsidian(doc)
+                    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', doc.get('title', 'document'))[:40]
+                    return self.send(zip_bytes, mime='application/zip', headers={'Content-Disposition': f'attachment; filename="{safe_name}_obsidian.zip"'})
                 if len(parts) == 4 and parts[3] == 'diff' and method == 'GET':
                     doc = store.document(doc_id, version)
                     prior = max((v['version'] for v in doc['versions'] if v['version'] < doc['version']), default=0)
