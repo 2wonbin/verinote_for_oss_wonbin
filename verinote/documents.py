@@ -9,6 +9,51 @@ from pathlib import Path
 MAX_BYTES = 32 * 1024 * 1024
 MAX_TEXT = 128_000
 MAX_DOCX_XML_BYTES = 16 * 1024 * 1024
+MAX_URL_FETCH_BYTES = 10 * 1024 * 1024
+
+
+# ---------------------------------------------------------------------------
+# [STUDY-CUSTOM] PPTX(파워포인트) 슬라이드 문서 텍스트 파서
+# ---------------------------------------------------------------------------
+def _extract_pptx_text(raw: bytes) -> str:
+    """Extract ordered text from slide*.xml in a PPTX archive."""
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        slide_names = [name for name in archive.namelist() if re.match(r'^ppt/slides/slide\d+\.xml$', name)]
+        if not slide_names:
+            raise ValueError('PPTX 슬라이드를 찾을 수 없습니다.')
+        slide_names.sort(key=lambda x: int(re.search(r'\d+', x).group()))
+
+        total_xml_size = sum(archive.getinfo(name).file_size for name in slide_names)
+        if total_xml_size > MAX_DOCX_XML_BYTES:
+            raise ValueError('PPTX 슬라이드 XML은 압축 해제 후 16 MiB까지 지원합니다. 문서를 나누어 등록하세요.')
+
+        ns_a = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
+        slides_text = []
+
+        for idx, name in enumerate(slide_names, 1):
+            info = archive.getinfo(name)
+            try:
+                with archive.open(info) as src:
+                    xml_data = src.read(MAX_DOCX_XML_BYTES + 1)
+            except (RuntimeError, EOFError, zlib.error) as exc:
+                raise ValueError('PPTX 슬라이드를 읽을 수 없습니다. 파일 손상을 확인하세요.') from exc
+
+            if len(xml_data) > MAX_DOCX_XML_BYTES:
+                raise ValueError('PPTX 슬라이드 크기 제한을 초과했습니다.')
+            if b'<!DOCTYPE' in xml_data or b'<!ENTITY' in xml_data:
+                raise ValueError('PPTX XML 엔티티는 허용하지 않습니다.')
+
+            root = ET.fromstring(xml_data)
+            paragraphs = []
+            for p in root.iter(ns_a + 'p'):
+                line = ''.join((node.text or '') for node in p.iter(ns_a + 't')).strip()
+                if line:
+                    paragraphs.append(line)
+
+            if paragraphs:
+                slides_text.append(f'--- [슬라이드 {idx}] ---\n' + '\n'.join(paragraphs))
+
+        return '\n\n'.join(slides_text)
 
 
 def decode_document(filename, raw):
@@ -39,6 +84,9 @@ def decode_document(filename, raw):
                 def paragraph(node):
                     return ''.join('\t' if n.tag == ns + 'tab' else '\n' if n.tag in {ns + 'br', ns + 'cr'} else (n.text or '') if n.tag == ns + 't' else '' for n in node.iter())
                 text = '\n'.join(paragraph(n) for n in root.iter(ns + 'p'))
+        elif suffix == '.pptx':
+            # [STUDY-CUSTOM] PPTX 슬라이드 파싱
+            text = _extract_pptx_text(raw)
         elif suffix == '.pdf':
             from pypdf import PdfReader
             reader = PdfReader(io.BytesIO(raw))
@@ -53,7 +101,7 @@ def decode_document(filename, raw):
                     raise ValueError('추출 본문은 128,000자까지 분석할 수 있습니다. 문서를 나누어 등록하세요.')
             text = '\n'.join(parts)
         else:
-            raise ValueError('지원 형식: TXT, MD, CSV, JSON, RST, LOG, PDF, DOCX')
+            raise ValueError('지원 형식: TXT, MD, CSV, JSON, RST, LOG, PDF, DOCX, PPTX')
     except (UnicodeError, zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
         raise ValueError('문서 형식이 손상되었거나 UTF-8이 아닙니다.') from exc
     if not text.strip():
