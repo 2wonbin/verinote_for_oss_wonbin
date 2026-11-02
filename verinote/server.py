@@ -113,9 +113,9 @@ class Handler(BaseHTTPRequestHandler):
             parts = route.path.strip('/').split('/')
             params = parse_qs(route.query)
             store = self.server.store
-            if method == 'GET' and route.path in {'/', '/app.js', '/style.css'}:
+            if method == 'GET' and route.path in {'/', '/app.js', '/style.css', '/graph.js'}:
                 name = 'index.html' if route.path == '/' else route.path[1:]
-                mime = {'index.html': 'text/html; charset=utf-8', 'app.js': 'text/javascript; charset=utf-8', 'style.css': 'text/css; charset=utf-8'}[name]
+                mime = {'index.html': 'text/html; charset=utf-8', 'app.js': 'text/javascript; charset=utf-8', 'style.css': 'text/css; charset=utf-8', 'graph.js': 'text/javascript; charset=utf-8'}[name]
                 return self.send((WEB / name).read_bytes(), mime=mime)
             if len(parts) == 4 and parts[:2] == ['api', 'providers'] and parts[3] == 'models' and method == 'POST':
                 if parts[2] == 'ollama':

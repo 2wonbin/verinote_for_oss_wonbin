@@ -452,7 +452,24 @@ $('#query-form').onsubmit=e=>{e.preventDefault();attempt(async()=>{
   const data=Object.fromEntries(new FormData(e.target));if(!data.snapshot)delete data.snapshot;
   const r=await api('/api/query','POST',data);renderQuery(r);await loadQueries();notice(r.status==='ambiguous'?'의미 선택이 필요합니다. 후보를 선택한 뒤 다시 조회하세요.':`${r.rows.length}개 결과 · 실제 PyreWire 계산 완료`);
 });};
+// [STUDY-CUSTOM] Canvas 기반 인터랙티브 지식 그래프 렌더링
+let graphViewerInstance = null;
+function renderInteractiveGraph(r) {
+  const panel = $('#graph-panel');
+  const container = $('#graph-container');
+  if (!panel || !container || typeof KnowledgeGraphViewer === 'undefined') return;
+  if (!r.rows || r.rows.length === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'block';
+  if (!graphViewerInstance) {
+    graphViewerInstance = new KnowledgeGraphViewer(container, { height: 420 });
+  }
+  graphViewerInstance.setData(r);
+}
 function renderQuery(r) {
+  renderInteractiveGraph(r);
   $('#query-result').innerHTML=`<div class="panel"><h2>${r.status==='ambiguous'?'의미를 선택해 주세요':r.rows.length+'개의 관계'} ${r.status==='empty'?'· 일치 결과 없음':''}</h2><p class="mono">스냅샷 ${esc(r.snapshot)}</p><p class="muted">${esc(r.engine)} ${esc(r.engine_version)} · ${esc(r.rule_id)}</p>${renderGraphMeanings(r)}${r.proofs.map(p=>`<div class="item"><h3 class="query-row">${scopedRow(r,p.row,p.row_refs)}</h3><details open><summary>증명 경로 · ${p.fact_ids.length}개 사실</summary>${p.fact_ids.map(id=>{const f=r.facts.find(f=>f.id===id);return `<p>${scopedFact(r,f)}</p><blockquote class="quote">${esc(f.payload.quote)}</blockquote><p class="mono">사실 ${esc(f.id)} · r${f.revision}</p>${sourceLink(f.document_id,f.version)}`;}).join('')}</details></div>`).join('')}<p class="muted">${esc(r.scope)}</p><details><summary>규칙과 전체 결과 JSON</summary><pre class="source">${esc(JSON.stringify(r,null,2))}</pre></details><button id="download-query">결과 JSON 다운로드</button></div>`;
   bindMeaningControls($('#query-result'));
   $('#download-query').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(r,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='verinote-query.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
