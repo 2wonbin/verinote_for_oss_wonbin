@@ -1,5 +1,10 @@
 # verinote
 
+> [!NOTE]
+> 이 저장소는 [semantic-reasoning/verinote](https://github.com/semantic-reasoning/verinote)의 비공식 개인 포크이며, OSS **[특화형2차_Wirelog Neuro-Symbolic Agent Lab]** 세션의 산출물입니다.
+>
+> 세션에서 진행한 트러블슈팅과 추가 기능은 **[스터디 개선 보고서](STUDY_REPORT.md)**에 정리했습니다. 아래 본문은 원본 README이므로 이 포크에서 추가·변경한 동작(PPTX·URL 등록, Obsidian 연동, 그래프 뷰어, 서로 다른 관계에 걸친 전이 추론 등)은 반영되어 있지 않습니다.
+
 원문을 등록하고, 개체·별칭·관계 사전을 먼저 승인하고, 그 사전으로 추출한 위키와 관계를 사람이 검토한 뒤, **실제 Wirelog로 승인된 지식만 조회**하는 로컬 웹 애플리케이션입니다. 문서 버전·정확한 인용·승인 이력·질의 스냅샷을 보존합니다. 여기서 xAI는 설명 가능한 AI(eXplainable AI)를 의미합니다.
 
 ## 라이선스
